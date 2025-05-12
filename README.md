@@ -1,7 +1,7 @@
 # 📚 PDFSideKick
 
 <div align="center">
-  <img src="pdfsidekick-frontend/public/logo.png" alt="PDFSideKick Logo" width="200"/>
+  <img src="https://github.com/Poojan38380/pdfSidekick-frontend/public/logo.png" alt="PDFSideKick Logo" width="200"/>
   <p><em>Your intelligent PDF companion: Upload, Search, and Chat with your documents</em></p>
   
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
