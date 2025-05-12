@@ -26,6 +26,13 @@ PDFSideKick is a full-stack application that allows users to upload PDF document
 - **👁️ Processing Status Tracking**: Monitor document processing progress in real-time
 - **🔒 User Authentication**: Secure access to your personal document library
 
+### 📂 Component Repositories
+
+This is the main repository for PDFSideKick. The frontend and backend components are available as separate repositories:
+
+- **[Frontend Repository](https://github.com/Poojan38380/pdfSidekick-frontend)**: Next.js application with TypeScript and Tailwind CSS
+- **[Backend Repository](https://github.com/Poojan38380/pdfSidekick-backend)**: FastAPI application with Python and PostgreSQL
+
 ---
 
 ## 🏗️ Architecture
