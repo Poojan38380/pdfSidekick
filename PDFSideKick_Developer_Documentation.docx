@@ -1,0 +1,366 @@
+# PDFSideKick Developer Documentation
+
+## Table of Contents
+1. Introduction
+2. Application Overview
+3. Technology Stack
+4. Architecture
+   - 4.1. High-Level Architecture
+   - 4.2. Low-Level Design
+5. Backend Implementation
+   - 5.1. PDF Processing Pipeline
+   - 5.2. Natural Language Processing & Question Answering
+   - 5.3. Vector Database for Semantic Search
+   - 5.4. Real-time Communication
+6. Frontend Implementation
+   - 6.1. User Interface Components
+   - 6.2. State Management
+   - 6.3. API Integration
+7. External Services
+8. Database Schema
+9. Code Structure
+10. Deployment Considerations
+11. Future Enhancements
+
+## 1. Introduction
+
+PDFSideKick is a full-stack application that enables users to upload PDF documents and ask questions about their content. The system processes these documents, extracts text, generates vector embeddings for semantic search, and utilizes natural language processing to provide accurate answers to user queries. This document provides a comprehensive overview of the application's architecture, implementation details, and technical components from a developer's perspective.
+
+## 2. Application Overview
+
+PDFSideKick consists of two main components:
+
+1. **Backend (FastAPI)**: Handles PDF processing, text extraction, chunking, vector embedding generation, and question answering using advanced NLP techniques.
+
+2. **Frontend (Next.js)**: Provides a modern, responsive user interface for document upload, management, and interactive question-answering functionality.
+
+Key features include:
+- PDF document upload and management
+- Automated text extraction with OCR fallback for scanned documents
+- Semantic search for finding relevant information in documents
+- Real-time question answering via WebSocket communication
+- Document processing status tracking
+- User authentication and document ownership
+
+## 3. Technology Stack
+
+### Backend:
+- **Framework**: FastAPI (Python)
+- **Database**: PostgreSQL (via NeonDB)
+- **PDF Processing**: PyPDF2 with OCR fallback
+- **Vector Embeddings**: Sentence transformers (all-MiniLM-L6-v2)
+- **LLM for Q&A**: Google's Flan-T5-Large (with HuggingFace integration)
+- **WebSockets**: FastAPI's built-in WebSocket support
+- **File Storage**: Cloudinary
+
+### Frontend:
+- **Framework**: Next.js (TypeScript)
+- **Styling**: Tailwind CSS
+- **State Management**: React Hooks and Context
+- **Authentication**: Unknown (likely Auth0, NextAuth or similar)
+- **WebSocket Client**: Custom implementation
+
+## 4. Architecture
+
+### 4.1. High-Level Architecture
+
+PDFSideKick follows a modern microservices-inspired architecture pattern with clear separation of concerns:
+
+```
+┌────────────────┐       ┌─────────────────────┐       ┌───────────────┐
+│                │       │                     │       │               │
+│    Frontend    │◄─────►│      Backend        │◄─────►│   Database    │
+│    (Next.js)   │       │     (FastAPI)       │       │  (PostgreSQL) │
+│                │       │                     │       │               │
+└────────────────┘       └─────────────────────┘       └───────────────┘
+                               ▲       ▲
+                               │       │
+                         ┌─────┘       └───────┐
+                         │                     │
+                 ┌───────▼────────┐     ┌──────▼─────────┐
+                 │                │     │                │
+                 │   Cloudinary   │     │ Language Models│
+                 │  (PDF Storage) │     │  (HuggingFace) │
+                 │                │     │                │
+                 └────────────────┘     └────────────────┘
+```
+
+The application follows a client-server architecture with:
+- **Client**: Next.js frontend handling UI rendering and user interactions
+- **Server**: FastAPI backend providing REST API endpoints and WebSocket communication
+- **External Services**: Cloudinary for document storage, HuggingFace for ML models
+- **Database**: PostgreSQL database for storing user data, documents, and vector embeddings
+
+### 4.2. Low-Level Design
+
+#### PDF Processing and Q&A Flow:
+
+```
+1. PDF Upload ─► 2. Text Extraction ─► 3. Text Chunking ─► 4. Embedding Generation ─► 5. Vector Storage
+                                                                                        │
+                                                                                        ▼
+8. Answer Generation ◄─ 7. Context Retrieval ◄─ 6. Semantic Search ◄─── User Question
+```
+
+1. **PDF Upload**: User uploads PDF through the frontend, which is stored in Cloudinary
+2. **Text Extraction**: Backend downloads PDF from Cloudinary, extracts text (with OCR fallback)
+3. **Text Chunking**: Text is split into manageable chunks for processing
+4. **Embedding Generation**: Vector embeddings are created for each text chunk
+5. **Vector Storage**: Embeddings are stored in the database with metadata
+6. **Semantic Search**: When a question is asked, the question is converted to an embedding and compared against stored chunk embeddings
+7. **Context Retrieval**: Most relevant chunks are retrieved based on vector similarity
+8. **Answer Generation**: LLM generates an answer based on the question and retrieved context
+
+#### WebSocket Communication for Real-time Q&A:
+
+```
+┌────────────┐            ┌────────────┐            ┌────────────┐
+│  Frontend  │            │  Backend   │            │    LLM     │
+└──────┬─────┘            └──────┬─────┘            └──────┬─────┘
+       │                         │                         │
+       │   WebSocket Connect     │                         │
+       │────────────────────────>│                         │
+       │                         │                         │
+       │   User Question         │                         │
+       │────────────────────────>│                         │
+       │                         │                         │
+       │   Acknowledge Receipt   │                         │
+       │<────────────────────────│                         │
+       │                         │                         │
+       │   "Thinking" Message    │                         │
+       │<────────────────────────│                         │
+       │                         │                         │
+       │                         │   Semantic Search       │
+       │                         │ (internal process)      │
+       │                         │                         │
+       │                         │   Generate Answer       │
+       │                         │─────────────────────────>
+       │                         │                         │
+       │                         │   Return Answer         │
+       │                         │<─────────────────────────
+       │                         │                         │
+       │   Assistant Response    │                         │
+       │<────────────────────────│                         │
+```
+
+## 5. Backend Implementation
+
+### 5.1. PDF Processing Pipeline
+
+The backend employs a sophisticated pipeline for PDF processing:
+
+1. **Document Upload**: PDFs are uploaded to Cloudinary for secure storage and retrieval
+2. **Text Extraction**: PyPDF2 extracts text from PDF documents
+   - OCR fallback for scanned documents or when PyPDF2 extracts insufficient text
+3. **Text Chunking**: The LangChain RecursiveCharacterTextSplitter divides documents into manageable chunks
+4. **Background Processing**: Processing occurs asynchronously with progress tracking
+5. **Status Updates**: Processing status is stored in the database and can be queried by the frontend
+
+Key components:
+- `pdf_processor.py`: Core PDF processing functions
+- `ocr_utils.py`: OCR capabilities for handling scanned documents
+- `background_jobs.py`: Background task handling
+
+### 5.2. Natural Language Processing & Question Answering
+
+PDFSideKick uses advanced NLP techniques for document understanding and question answering:
+
+1. **Embedding Model**: Sentence transformer (all-MiniLM-L6-v2) for generating vector embeddings
+2. **Question Answering**: Google's Flan-T5-Large model generates answers based on document context
+3. **Context-Aware Answers**: The system retrieves relevant document sections for each question
+4. **Prompt Engineering**: Sophisticated prompts ensure high-quality answers
+
+Key components:
+- `llm_client.py`: Manages LLM initialization and inference
+- `local_embedding_client.py`: Handles vector embedding generation
+- `chat_server.py`: WebSocket handler for real-time question answering
+
+### 5.3. Vector Database for Semantic Search
+
+The application implements a vector database for efficient semantic search:
+
+1. **Vector Storage**: Document chunks are converted to vector embeddings and stored in PostgreSQL
+2. **Semantic Search**: Cosine similarity is used to find relevant document chunks
+3. **Relevance Ranking**: Search results are ranked by similarity score
+4. **Threshold Filtering**: Configurable threshold ensures only relevant chunks are returned
+
+Key components:
+- `vector_db.py`: Core semantic search functionality
+- Database tables for storing embeddings and metadata
+
+### 5.4. Real-time Communication
+
+PDFSideKick utilizes WebSockets for real-time question answering:
+
+1. **Connection Management**: Handles WebSocket connections for each document session
+2. **Message Processing**: Processes user questions and sends responses
+3. **Structured Responses**: Returns well-formatted responses with metadata
+4. **Progress Indicators**: Provides "thinking" messages during processing
+
+## 6. Frontend Implementation
+
+### 6.1. User Interface Components
+
+The frontend uses a modern, component-based architecture:
+
+1. **Dashboard**: Document management interface
+2. **PDF Viewer**: Interactive document viewer
+3. **Chat Interface**: Real-time question answering interface
+4. **Upload Component**: Document upload functionality
+5. **Processing Status**: Visual indicators of document processing status
+
+### 6.2. State Management
+
+State management relies on React's built-in capabilities:
+
+1. **React Hooks**: useState, useEffect, useContext
+2. **Context API**: Global state management
+3. **Custom Hooks**: Encapsulated functionality like WebSocket communication
+
+### 6.3. API Integration
+
+The frontend communicates with the backend through:
+
+1. **REST API**: For document management and status updates
+2. **WebSockets**: For real-time question answering
+3. **File Upload**: For document submission
+
+## 7. External Services
+
+PDFSideKick integrates with several external services:
+
+1. **Cloudinary**: For secure PDF document storage and retrieval
+   - Configured with cloud name, API key, and secret
+   - Utilizes upload presets for security
+
+2. **HuggingFace**: For accessing state-of-the-art language models
+   - Optional API token for accessing gated models
+   - Local model caching for improved performance
+
+3. **NeonDB**: Serverless PostgreSQL database
+   - Stores user data, document metadata, and vector embeddings
+   - Configured via connection string
+
+## 8. Database Schema
+
+The application uses a relational database with the following core tables:
+
+1. **User**:
+   - `id`: UUID (primary key)
+   - `created_at`: Timestamp
+   - `updated_at`: Timestamp
+   - `username`: String
+   - `first_name`: String
+   - `last_name`: String
+   - `email`: String
+   - `profile_pic`: String (URL)
+
+2. **PDF**:
+   - `id`: UUID (primary key)
+   - `created_at`: Timestamp
+   - `updated_at`: Timestamp
+   - `title`: String
+   - `description`: String
+   - `document_link`: String (Cloudinary URL)
+   - `user_id`: UUID (foreign key to User)
+   - `processing_status`: String (status of document processing)
+   - `processing_progress`: Integer (percentage complete)
+   - `total_pages`: Integer
+   - `error_message`: String (if processing failed)
+
+3. **PDFChunk**:
+   - `id`: UUID (primary key)
+   - `pdf_id`: UUID (foreign key to PDF)
+   - `content`: Text
+   - `chunk_index`: Integer
+   - `page_number`: Integer
+
+4. **PDFEmbedding**:
+   - `id`: UUID (primary key)
+   - `pdf_id`: UUID (foreign key to PDF)
+   - `chunk_id`: UUID (foreign key to PDFChunk)
+   - `embedding`: Vector (high-dimensional vector)
+   - `model`: String (name of embedding model used)
+
+## 9. Code Structure
+
+### Backend Structure:
+```
+pdfsidekick-backend/
+├── api/                    # API endpoints
+│   ├── __init__.py
+│   └── pdfs.py             # PDF-related endpoints
+├── database/               # Database functionality
+│   ├── __init__.py
+│   └── connection.py       # DB connection management
+├── schemas/                # Pydantic schemas
+│   └── __init__.py
+├── utils/                  # Utility functions
+│   ├── background_jobs.py  # Background processing
+│   ├── cloudinary_utils.py # Cloudinary integration
+│   ├── colorLogger.py      # Custom logging
+│   ├── llm_client.py       # LLM integration
+│   ├── local_embedding_client.py  # Embedding generation
+│   ├── ocr_utils.py        # OCR capabilities
+│   ├── pdf_processor.py    # PDF processing pipeline
+│   └── vector_db.py        # Vector database operations
+├── websocket/              # WebSocket handling
+│   └── chat_server.py      # Real-time chat server
+├── main.py                 # Application entry point
+└── requirements.txt        # Python dependencies
+```
+
+### Frontend Structure:
+```
+pdfsidekick-frontend/
+├── app/                    # Next.js app directory
+│   ├── (home)/             # Home page components
+│   ├── dashboard/          # Dashboard components
+│   │   ├── (sidebarOpen)/  # Dashboard with open sidebar
+│   │   ├── (sidebarCollapsed)/ # Dashboard with collapsed sidebar
+│   │   └── _components/    # Shared dashboard components
+│   ├── hooks/              # Custom React hooks
+│   ├── api/                # API client functions
+│   └── lib/                # Utility libraries
+├── components/             # Shared UI components
+├── public/                 # Static assets
+├── services/               # External service integrations
+├── utils/                  # Utility functions
+└── package.json            # Node.js dependencies
+```
+
+## 10. Deployment Considerations
+
+Key considerations for deploying PDFSideKick:
+
+1. **Environment Variables**: Store sensitive information in environment variables:
+   - `DATABASE_URL`: NeonDB connection string
+   - `CLOUDINARY_CLOUD_NAME`: Cloudinary cloud name
+   - `CLOUDINARY_API_KEY`: Cloudinary API key
+   - `CLOUDINARY_API_SECRET`: Cloudinary API secret
+   - `CLOUDINARY_UPLOAD_PRESET`: Cloudinary upload preset
+   - `HUGGINGFACEHUB_API_TOKEN`: HuggingFace API token (optional)
+   - `MODELS_CACHE_DIR`: Directory for caching ML models (optional)
+
+2. **Model Caching**: Configure model caching to improve performance and reduce API calls
+
+3. **Database Scaling**: Consider PostgreSQL database scaling for vector storage
+
+4. **Memory Requirements**: Language models require substantial memory (4GB+ recommended)
+
+5. **Processing Queue**: Implement a more robust processing queue for production deployments
+
+## 11. Future Enhancements
+
+Potential areas for enhancement include:
+
+1. **Multi-document Question Answering**: Allow questions across multiple documents
+2. **Document Summarization**: Automatic generation of document summaries
+3. **Advanced OCR**: Improved OCR for complex documents and images
+4. **User Collaboration**: Shared document access and collaborative Q&A
+5. **Advanced Analytics**: Document insights and usage statistics
+6. **Mobile Applications**: Native mobile clients for iOS and Android
+7. **Offline Support**: Progressive Web App capabilities for offline access
+8. **Custom Training**: Fine-tuning models on specific document domains
+9. **Multi-language Support**: Processing documents in multiple languages
+10. **Integration APIs**: APIs for third-party integration 
